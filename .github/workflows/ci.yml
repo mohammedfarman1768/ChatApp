@@ -21,15 +21,31 @@ jobs:
         
     - name: Install dependencies
       run: npm install
-      
+
+    - name: Build shared packages
+      # shared-validation must be built first so its dist/ folder exists
+      # before the server can resolve @repo/shared-validation imports
+      run: npm run build --workspace=packages/shared-validation --workspace=packages/shared-types
+
+    - name: Generate Prisma Client
+      # Prisma types (GroupRole, MessageType, etc.) only exist after generate
+      # We use a dummy DATABASE_URL since prisma generate doesn't need a live DB
+      run: npx prisma generate --schema=apps/server/src/prisma/schema.prisma
+      env:
+        DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+
     - name: Run Linter
-      run: npm run lint
-      
+      run: npm run lint --workspace=server
+
     - name: Run Typecheck
       run: npm run typecheck
-      
+
     - name: Validate Prisma Schema
-      run: npm run prisma:validate
-      
+      run: npx prisma validate --schema=apps/server/src/prisma/schema.prisma
+
+    - name: Run Tests
+      run: npx jest --passWithNoTests
+      working-directory: apps/server
+
     - name: Build
       run: npm run build
