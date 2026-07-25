@@ -10,5 +10,7 @@ export * from './media/index.js';
 export * from './notifications/index.js';
 export * from './calls/index.js';
 export * from './group-calls/index.js';
+export * from './search/index.js';
 
 export const EmptySchema = z.object({});
+export * from './ai/index.js';

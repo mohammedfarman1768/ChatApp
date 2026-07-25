@@ -290,6 +290,11 @@ export class UsersService {
     return { success: true };
   }
 
+  async getBlockedUserIds(userId: string): Promise<string[]> {
+    const blocks = await usersRepository.getBlocksForUser(userId);
+    return blocks.map(b => b.blockerId === userId ? b.blockedId : b.blockerId);
+  }
+
   async unblockUser(blockerId: string, blockedId: string) {
     try {
       await usersRepository.deleteBlock(blockerId, blockedId);

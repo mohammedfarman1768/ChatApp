@@ -7,6 +7,8 @@ import { mediaSwagger } from './swagger/media.js';
 import { notificationsSwagger } from './swagger/notifications.js';
 import { callsSwagger } from './swagger/calls.js';
 import { groupCallsSwagger } from './swagger/group-calls.js';
+import { searchSwagger } from './swagger/search.js';
+import { aiSwaggerPaths } from './swagger/ai.js';
 
 const swaggerDocument = {
   openapi: '3.0.0',
@@ -70,6 +72,7 @@ const swaggerDocument = {
     ...groupsSwaggerPaths,
     ...groupMessagesSwaggerPaths,
     ...callsSwagger.paths,
+    ...aiSwaggerPaths,
     '/auth/register': {
       post: {
         summary: 'Register a new user',
@@ -322,6 +325,7 @@ const swaggerDocument = {
     ...mediaSwagger,
     ...notificationsSwagger,
     ...groupCallsSwagger,
+    ...searchSwagger,
   },
 };
 

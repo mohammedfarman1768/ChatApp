@@ -11,6 +11,7 @@ import { notFoundHandler } from './middleware/notFound.js';
 import { checkDatabaseReady } from './prisma/client.js';
 import { isSocketReady } from './realtime/socket.js';
 import { authRouter } from './modules/auth/routes.js';
+import { searchRouter } from './modules/search/routes.js';
 import './modules/auth/passport.js'; // Initialize passport strategies
 import { csrfErrorHandler } from './middleware/csrf.js';
 import { setupSwagger } from './docs/swagger.js';
@@ -72,6 +73,7 @@ export const createApp = () => {
 
   // Mount Modules
   app.use('/api/v1/auth', authRouter);
+  app.use('/api/v1/search', searchRouter);
 
   // 404 and Error Handling
   app.use(notFoundHandler);

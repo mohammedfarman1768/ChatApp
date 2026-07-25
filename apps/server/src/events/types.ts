@@ -82,7 +82,24 @@ export type EventType =
   | 'GROUP_CALL_MISSED'
   | 'GROUP_CALL_CANCELLED'
   | 'GROUP_CALL_FAILED'
-  | 'GROUP_CALL_SIGNAL_SENT';
+  | 'GROUP_CALL_SIGNAL_SENT'
+  | 'SEARCH_INDEX_CREATED'
+  | 'SEARCH_INDEX_UPDATED'
+  | 'SEARCH_INDEX_REMOVED'
+  | 'SEARCH_COMPLETED'
+  | 'SEARCH_HISTORY_CLEARED'
+  | 'SEARCH_REINDEX_REQUESTED'
+  | 'SEARCH_REINDEX_COMPLETED'
+  | 'AI_SUMMARY_REQUESTED'
+  | 'AI_SUMMARY_CREATED'
+  | 'AI_SMART_REPLY_CREATED'
+  | 'AI_REWRITE_CREATED'
+  | 'AI_TRANSLATION_CREATED'
+  | 'AI_GRAMMAR_FIXED'
+  | 'AI_MODERATION_COMPLETED'
+  | 'AI_GROUP_DESCRIPTION_CREATED'
+  | 'AI_GROUP_RULES_CREATED'
+  | 'AI_REQUEST_FAILED';
 
 export interface UserRegisteredPayload {
   userId: string;
@@ -300,6 +317,13 @@ export interface EventPayloadMap {
   GROUP_CALL_CANCELLED: GroupCallCancelledPayload;
   GROUP_CALL_FAILED: GroupCallFailedPayload;
   GROUP_CALL_SIGNAL_SENT: GroupCallSignalSentPayload;
+  SEARCH_INDEX_CREATED: SearchIndexCreatedPayload;
+  SEARCH_INDEX_UPDATED: SearchIndexUpdatedPayload;
+  SEARCH_INDEX_REMOVED: SearchIndexRemovedPayload;
+  SEARCH_COMPLETED: SearchCompletedPayload;
+  SEARCH_HISTORY_CLEARED: SearchHistoryClearedPayload;
+  SEARCH_REINDEX_REQUESTED: SearchReindexRequestedPayload;
+  SEARCH_REINDEX_COMPLETED: SearchReindexCompletedPayload;
 }
 
 // Future phases will add specific event payloads here
@@ -359,3 +383,111 @@ export interface GroupCallSignalSentPayload {
   senderId: string;
   type: string;
 }
+
+// Search Module Payload Interfaces
+export interface SearchIndexCreatedPayload {
+  entityType: string;
+  entityId: string;
+  ownerId?: string;
+}
+
+export interface SearchIndexUpdatedPayload {
+  entityType: string;
+  entityId: string;
+}
+
+export interface SearchIndexRemovedPayload {
+  entityType: string;
+  entityId: string;
+}
+
+export interface SearchCompletedPayload {
+  userId: string;
+  query: string;
+  category: string;
+}
+
+// --- AI Event Payloads ---
+
+export interface AISummaryRequestedPayload {
+  userId: string;
+  targetId: string;
+  targetType: 'GROUP' | 'CONVERSATION';
+}
+
+export interface AISummaryCreatedPayload {
+  userId: string;
+  targetId: string;
+  targetType: 'GROUP' | 'CONVERSATION';
+  summary: any;
+}
+
+export interface AISmartReplyCreatedPayload {
+  userId: string;
+  targetId: string;
+  targetType: 'GROUP' | 'CONVERSATION';
+  replies: string[];
+}
+
+export interface AIRewriteCreatedPayload {
+  userId: string;
+  originalText: string;
+  rewrittenText: string;
+  tone: string;
+}
+
+export interface AITranslationCreatedPayload {
+  userId: string;
+  originalText: string;
+  translatedText: string;
+  targetLanguage: string;
+}
+
+export interface AIGrammarFixedPayload {
+  userId: string;
+  originalText: string;
+  correctedText: string;
+}
+
+export interface AIModerationCompletedPayload {
+  userId: string;
+  targetText: string;
+  safe: boolean;
+  categories: any;
+  confidence: number;
+  reason?: string;
+}
+
+export interface AIGroupDescriptionCreatedPayload {
+  userId: string;
+  groupName: string;
+  purpose: string;
+  description: string;
+}
+
+export interface AIGroupRulesCreatedPayload {
+  userId: string;
+  groupName: string;
+  rules: string[];
+}
+
+export interface AIRequestFailedPayload {
+  userId: string;
+  feature: string;
+  errorMessage: string;
+}
+
+export interface SearchHistoryClearedPayload {
+  userId: string;
+}
+
+export interface SearchReindexRequestedPayload {
+  requestedBy: string;
+  entityType?: string;
+}
+
+export interface SearchReindexCompletedPayload {
+  entityType?: string;
+  recordsProcessed: number;
+}
+

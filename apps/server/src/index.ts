@@ -25,6 +25,10 @@ import callsRouter from './modules/calls/routes.js';
 import { registerCallEventHandlers } from './modules/calls/eventHandlers.js';
 import { groupCallsRouter } from './modules/group-calls/routes.js';
 import { registerGroupCallEventHandlers } from './modules/group-calls/eventHandlers.js';
+import { searchRouter } from './modules/search/routes.js';
+import { registerSearchEventHandlers } from './modules/search/eventHandlers.js';
+import { aiRouter } from './modules/ai/routes.js';
+import { registerAIEventHandlers } from './modules/ai/eventHandlers.js';
 import { createServer } from 'http';
 import { initSocketServer } from './realtime/socket.js';
 
@@ -36,6 +40,8 @@ registerGroupMessageEventHandlers();
 registerNotificationEventHandlers();
 registerCallEventHandlers();
 registerGroupCallEventHandlers();
+registerSearchEventHandlers();
+registerAIEventHandlers();
 
 async function bootstrap() {
   const app = express();
@@ -77,6 +83,8 @@ async function bootstrap() {
   // Let's mount it to match the REST API `/api/v1/groups/:groupId/calls`
   // Actually, we'll just mount it at `/api/v1/groups/:groupId/calls`
   app.use('/api/v1/groups/:groupId/calls', groupCallsRouter);
+  app.use('/api/v1/search', searchRouter);
+  app.use('/api/v1/ai', aiRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

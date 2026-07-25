@@ -11,5 +11,6 @@ It is a single Express application internally divided into domain modules that a
 | Chat   | Messaging        | Conversation, Message    |
 | Groups | Group Mgmt       | Group, GroupMember       |
 | Media  | File uploads     | File, Upload             |
+| Search | Full-Text Search | SearchIndex, History     |
 
 *(Models will be populated incrementally in later phases)*
