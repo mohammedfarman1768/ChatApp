@@ -1,0 +1,899 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- AUTH MODULE MODELS ---
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String?   // Nullable for OAuth-only users
+  name            String?
+  avatarUrl       String?
+  isEmailVerified Boolean   @default(false)
+  
+  sessions        Session[]
+  oauthAccounts   OAuthAccount[]
+  verificationTokens VerificationToken[]
+
+  // Chat Relations
+  conversationParticipants ConversationParticipant[]
+  messagesSent             Message[]
+  messageStatuses          MessageStatus[]
+  messageReactions         MessageReaction[]
+
+  // Groups Relations
+  groupMemberships         GroupMember[]
+  groupInvites             GroupInvite[]
+  groupJoinRequests        GroupJoinRequest[]
+  groupBans                GroupBan[]
+  groupBansIssued          GroupBan[] @relation("GroupBannedBy")
+  groupAudits              GroupAuditLog[] @relation("GroupAuditActor")
+  groupAuditsTargeted      GroupAuditLog[] @relation("GroupAuditTarget")
+
+  // Group Messaging Relations
+  groupConversationParticipants GroupConversationParticipant[]
+  groupMessagesSent             GroupMessage[] @relation("GroupMessageSender")
+  groupMessageHiddens           GroupMessageHidden[]
+  groupMessageReactions         GroupMessageReaction[]
+  groupMessageReadReceipts      GroupMessageReadReceipt[]
+  groupPinnedMessages           GroupPinnedMessage[]
+  groupAnnouncementsCreated     GroupAnnouncement[]
+
+  // Media Relations
+  mediaFiles                    MediaFile[]
+  mediaUploadSessions           MediaUploadSession[]
+
+  // Notification Relations
+  notifications                 Notification[] @relation("NotificationUser")
+  notificationsActed            Notification[] @relation("NotificationActor")
+  notificationPreferences       NotificationPreference[]
+
+  // Call Relations
+  callSessionsAsCaller          CallSession[] @relation("CallCaller")
+  callSessionsAsCallee          CallSession[] @relation("CallCallee")
+  callParticipations            CallParticipant[]
+  callSignalsSent               CallSignal[]
+
+  // Group Call Relations
+  groupCallSessionsCreated      GroupCallSession[] @relation("GroupCallCreator")
+  groupCallParticipations       GroupCallParticipant[]
+  groupCallSignalsSent          GroupCallSignal[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([email])
+}
+
+model Session {
+  id               String   @id @default(uuid())
+  userId           String
+  refreshTokenHash String   @unique // Hashed to prevent reuse if DB leaked
+  deviceId         String?  // To identify different devices (e.g. "iPhone 13")
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique // Hashed so the raw token isn't in the DB
+  type      TokenType
+  expiresAt DateTime
+  usedAt    DateTime? // Track if it was already used
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model OAuthAccount {
+  id             String   @id @default(uuid())
+  userId         String
+  provider       OAuthProvider
+  providerUserId String
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([provider, providerUserId]) // A provider user ID can only be linked to one account
+  @@index([userId])
+}
+
+enum OAuthProvider {
+  GOOGLE
+}
+
+// --- USERS MODULE MODELS ---
+
+model UserProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  username    String   @unique
+  bio         String?
+  avatarUrl   String?
+  customStatus String?
+
+  privacySettings PrivacySettings?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model PrivacySettings {
+  id                  String   @id @default(uuid())
+  userProfileId       String   @unique
+  profileVisibility   Visibility @default(PUBLIC)
+  statusVisibility    Visibility @default(FRIENDS)
+
+  userProfile         UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+}
+
+enum Visibility {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+model FriendRequest {
+  id          String        @id @default(uuid())
+  senderId    String
+  receiverId  String
+  status      RequestStatus @default(PENDING)
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
+  @@index([senderId])
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+model Friendship {
+  id          String   @id @default(uuid())
+  userId      String
+  friendId    String
+  
+  createdAt   DateTime @default(now())
+
+  // To prevent duplicates, the application logic will always ensure userId < friendId before inserting.
+  @@unique([userId, friendId])
+  @@index([userId])
+  @@index([friendId])
+}
+
+model Contact {
+  id            String   @id @default(uuid())
+  ownerId       String
+  contactUserId String
+  alias         String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([ownerId, contactUserId])
+  @@index([ownerId])
+}
+
+model Block {
+  id          String   @id @default(uuid())
+  blockerId   String
+  blockedId   String
+  
+  createdAt   DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+}
+
+// --- CHAT MODULE MODELS ---
+
+model Conversation {
+  id              String   @id @default(uuid())
+  participantAId  String
+  participantBId  String
+  lastMessageId   String?
+  lastMessageAt   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  participants    ConversationParticipant[]
+  messages        Message[]
+
+  // Ensure normalized pair: participantAId < participantBId handled in code, but unique constraint prevents duplicates
+  @@unique([participantAId, participantBId])
+  @@index([participantAId])
+  @@index([participantBId])
+}
+
+model ConversationParticipant {
+  id                String   @id @default(uuid())
+  conversationId    String
+  userId            String
+  joinedAt          DateTime @default(now())
+  lastReadMessageId String?
+  unreadCount       Int      @default(0)
+  archived          Boolean  @default(false)
+  pinned            Boolean  @default(false)
+  mutedUntil        DateTime?
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id                  String   @id @default(uuid())
+  conversationId      String
+  senderId            String
+  content             String
+  messageType         MessageType @default(TEXT)
+  edited              Boolean  @default(false)
+  editedAt            DateTime?
+  deletedForEveryone  Boolean  @default(false)
+  deletedAt           DateTime?
+  createdAt           DateTime @default(now())
+
+  conversation        Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender              User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  statuses            MessageStatus[]
+  reactions           MessageReaction[]
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderId])
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  FILE
+  AUDIO
+  SYSTEM
+}
+
+model MessageStatus {
+  id          String   @id @default(uuid())
+  messageId   String
+  userId      String
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model MessageReaction {
+  id          String   @id @default(uuid())
+  messageId   String
+  userId      String
+  emoji       String
+  createdAt   DateTime @default(now())
+
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+}
+
+// --- GROUPS MODULE MODELS ---
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum GroupVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum GroupAuditAction {
+  GROUP_CREATED
+  GROUP_UPDATED
+  MEMBER_JOINED
+  MEMBER_LEFT
+  MEMBER_KICKED
+  MEMBER_BANNED
+  MEMBER_UNBANNED
+  ROLE_UPDATED
+  SETTINGS_UPDATED
+  INVITE_CREATED
+  INVITE_REVOKED
+  OWNERSHIP_TRANSFERRED
+}
+
+model Group {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  avatarMediaId String?
+  visibility    GroupVisibility @default(PRIVATE)
+  maxMembers    Int      @default(500)
+  createdBy     String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  members       GroupMember[]
+  invites       GroupInvite[]
+  joinRequests  GroupJoinRequest[]
+  bans          GroupBan[]
+  settings      GroupSettings?
+  auditLogs     GroupAuditLog[]
+
+  // Group Messaging
+  conversation  GroupConversation?
+  pinnedMessages GroupPinnedMessage[]
+  announcements  GroupAnnouncement[]
+
+  // Group Calls
+  groupCalls    GroupCallSession[]
+
+  @@index([createdBy])
+}
+
+model GroupMember {
+  id                String    @id @default(uuid())
+  groupId           String
+  userId            String
+  role              GroupRole @default(MEMBER)
+  nickname          String?
+  joinedAt          DateTime  @default(now())
+  mutedUntil        DateTime?
+  lastReadAt        DateTime?
+  lastSeenMessageId String?
+  
+  group             Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model GroupInvite {
+  id          String   @id @default(uuid())
+  groupId     String
+  createdBy   String
+  inviteCode  String   @unique
+  maxUses     Int?
+  uses        Int      @default(0)
+  expiresAt   DateTime?
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  creator     User     @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model GroupJoinRequest {
+  id          String   @id @default(uuid())
+  groupId     String
+  userId      String
+  status      JoinRequestStatus @default(PENDING)
+  requestedAt DateTime @default(now())
+  decidedAt   DateTime?
+  decidedBy   String?
+
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Prevent duplicate pending requests
+  @@unique([groupId, userId])
+}
+
+model GroupBan {
+  id          String   @id @default(uuid())
+  groupId     String
+  userId      String
+  bannedBy    String
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  banner      User     @relation("GroupBannedBy", fields: [bannedBy], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model GroupSettings {
+  id                         String  @id @default(uuid())
+  groupId                    String  @unique
+  allowMemberInvites         Boolean @default(false)
+  allowMemberNicknameChanges Boolean @default(true)
+  joinApprovalRequired       Boolean @default(true)
+  slowModeSeconds            Int     @default(0)
+  allowMedia                 Boolean @default(true)
+  allowFiles                 Boolean @default(true)
+  allowVoiceMessages         Boolean @default(true)
+  allowGroupCalls            Boolean @default(true)
+  allowModeratorAnnouncements Boolean @default(false)
+
+  group                      Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}
+
+model GroupAuditLog {
+  id           String   @id @default(uuid())
+  groupId      String
+  actorId      String
+  targetUserId String?
+  action       GroupAuditAction
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  group        Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actor        User     @relation("GroupAuditActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetUser   User?    @relation("GroupAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+}
+
+// --- GROUP MESSAGING MODULE MODELS ---
+
+enum GroupMessageType {
+  TEXT
+  SYSTEM
+  REPLY
+  ANNOUNCEMENT
+}
+
+model GroupConversation {
+  id              String   @id @default(uuid())
+  groupId         String   @unique
+  lastMessageId   String?
+  lastMessageAt   DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  group           Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  participants    GroupConversationParticipant[]
+  messages        GroupMessage[]
+}
+
+model GroupConversationParticipant {
+  id                String   @id @default(uuid())
+  conversationId    String
+  userId            String
+  joinedAt          DateTime @default(now())
+  lastReadMessageId String?
+  unreadCount       Int      @default(0)
+  mutedUntil        DateTime?
+  archived          Boolean  @default(false)
+
+  conversation      GroupConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model GroupMessage {
+  id                 String   @id @default(uuid())
+  conversationId     String
+  senderId           String
+  content            String
+  messageType        GroupMessageType @default(TEXT)
+  replyToMessageId   String?
+  edited             Boolean  @default(false)
+  editedAt           DateTime?
+  deletedAt          DateTime?
+  deletedForEveryone Boolean  @default(false)
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  conversation       GroupConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender             User              @relation("GroupMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo            GroupMessage?     @relation("GroupMessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies            GroupMessage[]    @relation("GroupMessageReplies")
+
+  reactions          GroupMessageReaction[]
+  readReceipts       GroupMessageReadReceipt[]
+  hiddenBy           GroupMessageHidden[]
+  pinnedIn           GroupPinnedMessage?
+  announcement       GroupAnnouncement?
+}
+
+model GroupMessageHidden {
+  messageId String
+  userId    String
+  hiddenAt  DateTime @default(now())
+
+  message   GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+}
+
+model GroupMessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message   GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+}
+
+model GroupMessageReadReceipt {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message   GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+}
+
+model GroupPinnedMessage {
+  id        String   @id @default(uuid())
+  groupId   String
+  messageId String   @unique
+  pinnedBy  String
+  pinnedAt  DateTime @default(now())
+
+  group     Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  message   GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinner    User         @relation(fields: [pinnedBy], references: [id], onDelete: Cascade)
+}
+
+model GroupAnnouncement {
+  id        String   @id @default(uuid())
+  groupId   String
+  messageId String   @unique
+  createdBy String
+  createdAt DateTime @default(now())
+
+  group     Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  message   GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  creator   User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+}
+
+// --- MEDIA MODULE MODELS ---
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  OTHER
+}
+
+enum UploadStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+model MediaFile {
+  id           String    @id @default(uuid())
+  ownerId      String
+  originalName String
+  storageKey   String    @unique
+  storageUrl   String?
+  mimeType     String
+  fileType     MediaType
+  sizeBytes    Int
+  checksum     String?
+  altText      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  owner        User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+model MediaUploadSession {
+  id           String       @id @default(uuid())
+  ownerId      String
+  fileName     String
+  storageKey   String       @unique
+  mimeType     String
+  fileType     MediaType
+  sizeBytes    Int
+  status       UploadStatus @default(PENDING)
+  expiresAt    DateTime
+  createdAt    DateTime     @default(now())
+  completedAt  DateTime?
+
+  owner        User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+// --- NOTIFICATIONS MODULE MODELS ---
+
+enum NotificationCategory {
+  SYSTEM
+  SOCIAL
+  CHAT
+  GROUP
+  SECURITY
+  MEDIA
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  READ
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  actorId     String?
+  category    NotificationCategory
+  type        String   // specific event type like 'MEMBER_JOINED'
+  priority    NotificationPriority @default(NORMAL)
+  title       String
+  body        String
+  actionUrl   String?
+  entityId    String?
+  entityType  String?
+  metadata    Json?
+  isRead      Boolean  @default(false)
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  user        User     @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  actor       User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  deliveries  NotificationDelivery[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([isRead])
+  @@index([type])
+  @@index([deletedAt])
+  @@index([expiresAt])
+}
+
+model NotificationDelivery {
+  id             String   @id @default(uuid())
+  notificationId String
+  channel        NotificationChannel
+  status         NotificationStatus @default(PENDING)
+  attempts       Int      @default(0)
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([status])
+  @@unique([notificationId, channel])
+}
+
+model NotificationPreference {
+  id        String   @id @default(uuid())
+  userId    String
+  category  NotificationCategory // applies broadly if type is null
+  type      String?              // specific type for granular control
+  channel   NotificationChannel
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@unique([userId, category, type, channel])
+}
+
+// --- CALLS MODULE MODELS ---
+
+enum CallSessionStatus {
+  RINGING
+  ACCEPTED
+  REJECTED
+  ONGOING
+  ENDED
+  MISSED
+  CANCELLED
+  FAILED
+}
+
+model CallSession {
+  id              String            @id @default(uuid())
+  callerId        String
+  calleeId        String
+  status          CallSessionStatus @default(RINGING)
+  startedAt       DateTime          @default(now())
+  acceptedAt      DateTime?
+  endedAt         DateTime?
+  durationSeconds Int               @default(0)
+  ringExpiresAt   DateTime?
+  deletedAt       DateTime?
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  caller          User              @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  callee          User              @relation("CallCallee", fields: [calleeId], references: [id], onDelete: Cascade)
+  participants    CallParticipant[]
+  signals         CallSignal[]
+
+  @@index([callerId])
+  @@index([calleeId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model CallParticipant {
+  id            String      @id @default(uuid())
+  callSessionId String
+  userId        String
+  joinedAt      DateTime    @default(now())
+  leftAt        DateTime?
+  isCaller      Boolean     @default(false)
+  hasAudio      Boolean     @default(true)
+  hasVideo      Boolean     @default(false)
+  deviceInfo    String?
+
+  callSession   CallSession @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([callSessionId])
+  @@index([userId])
+}
+
+model CallSignal {
+  id            String      @id @default(uuid())
+  callSessionId String
+  senderId      String
+  type          String      // e.g., "offer", "answer", "ice-candidate"
+  payload       Json
+
+  createdAt     DateTime    @default(now())
+
+  callSession   CallSession @relation(fields: [callSessionId], references: [id], onDelete: Cascade)
+  sender        User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([callSessionId])
+  @@index([senderId])
+}
+
+// --- GROUP CALLS MODULE MODELS ---
+
+enum GroupCallSessionStatus {
+  RINGING
+  ACTIVE
+  ENDED
+  MISSED
+  CANCELLED
+  FAILED
+}
+
+model GroupCallSession {
+  id              String                 @id @default(uuid())
+  groupId         String
+  startedBy       String
+  status          GroupCallSessionStatus @default(RINGING)
+  startedAt       DateTime               @default(now())
+  ringExpiresAt   DateTime?              // Backend-enforced ring timeout (60s default)
+  endedAt         DateTime?
+  durationSeconds Int                    @default(0)
+  deletedAt       DateTime?
+
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  group           Group                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  creator         User                   @relation("GroupCallCreator", fields: [startedBy], references: [id], onDelete: Cascade)
+  participants    GroupCallParticipant[]
+  signals         GroupCallSignal[]
+
+  @@index([groupId])
+  @@index([startedBy])
+  @@index([status])
+}
+
+model GroupCallParticipant {
+  id                 String           @id @default(uuid())
+  groupCallSessionId String
+  userId             String
+  joinedAt           DateTime         @default(now())
+  leftAt             DateTime?
+  hasAudio           Boolean          @default(true)
+  hasVideo           Boolean          @default(false)
+  deviceInfo         String?
+
+  groupCallSession   GroupCallSession @relation(fields: [groupCallSessionId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([groupCallSessionId])
+  @@index([userId])
+}
+
+model GroupCallSignal {
+  id                 String           @id @default(uuid())
+  groupCallSessionId String
+  senderId           String
+  type               String           // e.g., "offer", "answer", "ice-candidate"
+  payload            Json
+
+  createdAt          DateTime         @default(now())
+
+  groupCallSession   GroupCallSession @relation(fields: [groupCallSessionId], references: [id], onDelete: Cascade)
+  sender             User             @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([groupCallSessionId])
+  @@index([senderId])
+}
